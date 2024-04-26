@@ -34,9 +34,9 @@ bordeaux_formodel %<>% mutate(srmemory_share_5cat = as.factor(srmemory_share),
 bordeaux_formodel %>%
   dplyr::select(contains(c("srmemory_share", "srhealth_share"))) %>%
   map_dfr(class) %>% t()
-
-save(bordeaux_cleaned, bordeaux_formodel,
-     file = here::here("data", "analysis_data", "Calishare", "bordeaux_cleaned.RData"))
+# 
+# save(bordeaux_cleaned, bordeaux_formodel, 
+#      file = here::here("data", "analysis_data", "Calishare", "bordeaux_cleaned.RData"))
 
 #---- Models ----
 measures <- c("memory", "health")
@@ -52,6 +52,7 @@ boundary_memory <-
   as.numeric(quantile(bordeaux_formodel$srmemory_memento, c(0.05, 0.95)))
 
 models_func <- function(m){
+  # m = "health"
   knots_3 <- case_when(m == "memory" ~ knots_memory,
                        m == "health" ~ knots_health)
   boundary_knots <- case_when(m == "memory" ~ boundary_memory,
@@ -70,20 +71,13 @@ models_func <- function(m){
           paste0(cat_var, " ~ ", predictor, "*", covariates[1], " + ", predictor, "*", covariates[2]),
           paste0(cat_var, " ~ ", predictor, "*rank"),
           paste0(cat_var, " ~ ", predictor, "*rank",  " + ", paste(covariates, collapse = " + ")),
-          paste0(cat_var, " ~ ", predictor, "*rank",  " + ", predictor, "*", covariates[1], " + ", predictor, "*", covariates[2])), 2),
-    # Linear regression
-    paste0(cont_var, " ~ ", predictor),
-    paste0(cont_var, " ~ ", predictor, " + ", paste(covariates, collapse = " + ")),
-    paste0(cont_var, " ~ ", predictor, "*", covariates[1], " + ", predictor, "*", covariates[2]),
-    paste0(cont_var, " ~ ", predictor, "*rank"),
-    paste0(cont_var, " ~ ", predictor, "*rank", " + ", paste(covariates, collapse = " + ")),
-    paste0(cont_var, " ~ ", predictor, "*rank", " + ", predictor, "*", covariates[1], " + ", predictor, "*", covariates[2]))
+          paste0(cat_var, " ~ ", predictor, "*rank",  " + ", predictor, "*", covariates[1], " + ", predictor, "*", covariates[2])), 2))
   # print(model_formulas)
   names(model_formulas) <- c(paste0(
-    rep(rep(c("", "int_"), each = 6), 3),
-    rep(c("multi_", "ordinal_", "linear_"), each = 12),
-    rep(c(m, paste0(paste0(m, "_splines_3knots"))), 18),
-    rep(c("", "", "_agesex", "_agesex", "_agesexint", "_agesexint"), 6)))
+    rep(rep(c("", "int_"), each = 6), 2),
+    rep(c("multi_", "ordinal_"), each = 12),
+    rep(c(m, paste0(paste0(m, "_splines_3knots"))), 12),
+    rep(c("", "", "_agesex", "_agesex", "_agesexint", "_agesexint"), 4)))
   # View(model_formulas)
   
   crosswalk_models <- vector(mode = "list", length = length(model_formulas))
@@ -100,10 +94,6 @@ models_func <- function(m){
         crosswalk_models[[i]] <-
           MASS::polr(as.formula(model_formulas[[i]]),
                      data = bordeaux_formodel, method = "logistic")
-        # Linear
-      } else if (str_detect(m, "linear")){
-        crosswalk_models[[i]] <-
-          lm(as.formula(model_formulas[[i]]), data = bordeaux_formodel)
       }
     }, error = function(e){
       cat("ERROR for model ",i,": ", conditionMessage(e), "\n")})
@@ -116,15 +106,6 @@ models_func <- function(m){
 
 crosswalk_models_memory <- models_func("memory")
 crosswalk_models_health <- models_func("health")
-
-#---- **Fit stats ----
-# Test proportional assumptions
-# Memory
-poTest(crosswalk_models_memory$ordinal_memory_splines_3knots_agesex)
-
-# Health
-poTest(crosswalk_models_health$ordinal_health)
-# H0 not rejected, ordinal
 
 #---- **predicted values ----
 # Predicted categorical memory reports
@@ -152,17 +133,9 @@ summary(pred_mat)
 pred_mat %<>% 
   dplyr::mutate_all(as.numeric)
 
-pred_mat_linear <- pred_mat %>% dplyr::select(contains("linear"))
-pred_mat_linear %<>% dplyr::mutate_all(~case_when(. < 3 ~ 1, . < 4 ~ 2, . >= 4 ~ 3))
-pred_mat[, paste0(colnames(pred_mat_linear), "_cat")] <- pred_mat_linear
-
-summary(pred_mat)
-
 #---- KAPPA statistics ----
 variables <- pred_mat %>% 
-  dplyr::select(-srmemory_memento, -srhealth_memento,
-                # Exclude linear prediction without recategorizing
-                -all_of(colnames(pred_mat_linear))) %>%
+  dplyr::select(-srmemory_memento, -srhealth_memento) %>%
   colnames() %>% sort()
 variables
 
@@ -187,31 +160,46 @@ for (v in variables){
 
 kappa_tbl %>% dplyr::select(contains("memory")) %>% t()
 kappa_tbl %>% dplyr::select(contains("memory") & contains("agesex")) %>% t()
-kappa_tbl %>% dplyr::select(ends_with("_pe") & contains("memory") & !contains("linear")) %>% t() %>%
+kappa_tbl %>% dplyr::select(ends_with("_pe") & contains("memory")) %>% t() %>%
   as.data.frame() %>% mutate(model = rownames(.)) %>% arrange(V1)
 
 kappa_tbl %>% dplyr::select(contains("health")) %>% t()
-kappa_tbl %>% dplyr::select(ends_with("_pe") & contains("health") & !contains("linear")) %>% t() %>%
+kappa_tbl %>% dplyr::select(ends_with("_pe") & contains("health")) %>% t() %>%
   as.data.frame() %>% mutate(model = rownames(.)) %>% arrange(V1)
 
-save(kappa_tbl, file = here::here("data", "analysis_data", "Calishare",
-                                  "wtd_kappa_02022024.RData"))
+# save(kappa_tbl, file = here::here("data", "analysis_data", "Calishare",
+#                                   "wtd_kappa_04232024.RData"))
 
 #---- Final model ----
 # Memory: multinomial with splines, interaction term with order, age, sex
 crosswalk_models_memory[["int_multi_memory_splines_3knots_agesexint"]]
 
-# Health: ordinal model 1
-crosswalk_models_health$ordinal_health
+# Health: multinomial with splines, interaction term with age and sex
+crosswalk_models_health$multi_health_splines_3knots_agesexint
+# For some reason summary() is not working
+# Obtain the model object again
+knots_health <- 
+  as.numeric(quantile(bordeaux_formodel$srhealth_memento, c(0.1, 0.5, 0.9)))
+boundary_health <- 
+  as.numeric(quantile(bordeaux_formodel$srhealth_memento, c(0.05, 0.95)))
+model_final_health <-  
+  nnet::multinom(srhealth_share_3cat ~ ns(srhealth_memento, 
+                                          knots = knots_health, 
+                                          Boundary.knots = boundary_health)*female + 
+                          ns(srhealth_memento, knots = knots_health, 
+                             Boundary.knots = boundary_health)*age_group,
+                        data = bordeaux_formodel)
+summary(model_final_health)
+# The coefficient are the same with the function results
 
 # Save the model
 crosswalk_model <- list(
   "int_multi_memory_splines_3knots_agesexint" =
     crosswalk_models_memory$int_multi_memory_splines_3knots_agesexint,
-  "ordinal_health" = 
-    crosswalk_models_health$ordinal_health)
+  "multi_health_splines_3knots_agesexint" = 
+    model_final_health)
 save(crosswalk_model, file = here::here("data", "model_results", "crosswalk",
-                                        "crosswalk_model_300_03252024.RData"))
+                                        "crosswalk_model_300_04232024.RData"))
 
 #---- **linear weighted kappa ----
 p_load("irr")
@@ -223,72 +211,110 @@ kappa2(memory_mat, "equal")
 
 health_mat <- pred_mat %>% cbind(bordeaux_formodel) %>% 
   dplyr::select(srhealth_share_3cat, 
-                ordinal_health_splines_3knots_agesex)
+                multi_health_splines_3knots_agesexint)
 kappa2(health_mat, "squared")
 kappa2(health_mat, "equal")
 
-#---- Equipercentile: First response ----
+#---- Equiprecentile: First response ----
 p_load("equate")
-# health: 1-excellent, 5-poor; 0(worst) - 10(best), need to be reversed
-# memory lower number: bette, higher number worse
+# health: 1-excellent, 5-poor;0 (worst)-10(best), need to be reversed
+# memory lower number: better, higher number worse
 bordeaux_formodel %<>%
   mutate(srhealth_share_3cat_rev = case_when(srhealth_share_3cat == 3 ~ 1,
-                                        srhealth_share_3cat == 2 ~ 2,
-                                        srhealth_share_3cat == 1 ~ 3))
-bordeaux_1st_memento <- bordeaux_formodel %>% filter(rank == "memento_share")
-bordeaux_1st_share <- bordeaux_formodel %>% filter(rank == "share_memento")
+                                             srhealth_share_3cat == 2 ~ 2,
+                                             srhealth_share_3cat == 1 ~ 3),
+         srhealth_share_5cat_rev = case_when(srhealth_share == 5 ~ 1,
+                                             srhealth_share == 4 ~ 2,
+                                             srhealth_share == 3 ~ 3,
+                                             srhealth_share == 2 ~ 4,
+                                             srhealth_share == 1 ~ 5))
+bordeaux_1st_memento <- bordeaux_formodel %>%
+  filter(rank == "memento_share")
+bordeaux_1st_share <- bordeaux_formodel %>%
+  filter(rank == "share_memento")
 
 # health
 memento_srhealth_freq <- freqtab(bordeaux_1st_memento$srhealth_memento, design = "ng")
-share_srhealth_freq <- freqtab(bordeaux_1st_share$srhealth_share_3cat_rev, design = "ng")
+share_srhealth_freq_3cat <- freqtab(bordeaux_1st_share$srhealth_share_3cat_rev, design = "ng")
+share_srhealth_freq_5cat <- freqtab(bordeaux_1st_share$srhealth_share_5cat_rev, design = "ng")
 
-eqhealth_linear <- equate(memento_srhealth_freq, share_srhealth_freq, type = "l")
-eqhealth_mean <- equate(memento_srhealth_freq, share_srhealth_freq, type = "mean")
-eqhealth_eqp <- equate(memento_srhealth_freq, share_srhealth_freq, type = "equipercentile")
+eqhealth_linear_3cat <- equate(memento_srhealth_freq, share_srhealth_freq_3cat, type = "l")
+eqhealth_mean_3cat <- equate(memento_srhealth_freq, share_srhealth_freq_3cat, type = "mean")
+eqhealth_eqp_3cat <- equate(memento_srhealth_freq, share_srhealth_freq_3cat, type = "equipercentile")
+eqhealth_eqp_5cat <- equate(memento_srhealth_freq, share_srhealth_freq_5cat, type = "equipercentile")
 
-plot(eqhealth_eqp, eqhealth_mean, xlab = "srhealth")
-plot(eqhealth_linear, eqhealth_eqp, eqhealth_mean, xlab = "srhealth")
+plot(eqhealth_eqp_3cat, eqhealth_mean_3cat, xlab = "srhealth")
+plot(eqhealth_linear_3cat, eqhealth_eqp_3cat, eqhealth_mean_3cat, xlab = "srhealth")
 
-eqhealth_eqp$concordance
-# Checked the frequency of rounded equated3cat distribution with SHARE 3cat distribution
-# It matches
+eqhealth_eqp_3cat$concordance
+eqhealth_eqp_5cat$concordance
+# checked the frequency of rounded eqauted3cat distribution with SHARE 3cat distribution
+# It matches.
 
 # memory
 memento_srmemory_freq <- freqtab(bordeaux_1st_memento$srmemory_memento, design = "ng")
-share_srmemory_freq <- freqtab(bordeaux_1st_share$srmemory_share_3cat, design = "ng")
+share_srmemory_freq_3cat <- freqtab(bordeaux_1st_share$srmemory_share_3cat, design = "ng")
+share_srmemory_freq_5cat <- freqtab(bordeaux_1st_share$srmemory_share_5cat, design = "ng")
 
-eqmemory_linear <- equate(memento_srmemory_freq, share_srmemory_freq, type = "l")
-eqmemory_mean <- equate(memento_srmemory_freq, share_srmemory_freq, type = "mean")
-eqmemory_eqp <- equate(memento_srmemory_freq, share_srmemory_freq, type = "equipercentile")
+eqmemory_linear_3cat <- equate(memento_srmemory_freq, share_srmemory_freq_3cat, type = "l")
+eqmemory_mean_3cat <- equate(memento_srmemory_freq, share_srmemory_freq_3cat, type = "mean")
+eqmemory_eqp_3cat <- equate(memento_srmemory_freq, share_srmemory_freq_3cat, type = "equipercentile")
+eqmemory_eqp_5cat <- equate(memento_srmemory_freq, share_srmemory_freq_5cat, type = "equipercentile")
 
-plot(eqmemory_linear, eqmemory_eqp, eqmemory_mean, xlab = "srmemory")
+plot(eqmemory_linear_3cat, eqmemory_eqp_3cat, eqmemory_mean_3cat, xlab = "srmemory")
+eqmemory_eqp_3cat$concordance
+eqmemory_eqp_5cat$concordance
+# checked the frequency of rounded eqauted3cat distribution with SHARE 3cat distribution
+# It matches.
 
-eqmemory_eqp$concordance
-# Checked the frequency of rounded equated3cat distribution with SHARE 3cat distribution
-# It matches
-
-pred_mat <- bordeaux_formodel %>%
+pred_mat <- bordeaux_formodel %>% 
   dplyr::select(srmemory_memento, srhealth_memento, 
-                srhealth_share_3cat_rev, srmemory_share_3cat) %>%
-  left_join(eqhealth_eqp$concordance %>% as_tibble %>% 
+                srhealth_share_3cat_rev, srmemory_share_3cat,
+                srhealth_share_5cat_rev, srmemory_share_5cat) %>%
+  left_join(eqhealth_eqp_3cat$concordance %>% as_tibble() %>% 
               dplyr::rename("srhealth_eqt_3cat" = "yx"),
             by = c("srhealth_memento" = "scale")) %>%
-  left_join(eqmemory_eqp$concordance %>% as_tibble %>%
+  left_join(eqhealth_eqp_5cat$concordance %>% as_tibble() %>% 
+              dplyr::rename("srhealth_eqt_5cat" = "yx"),
+            by = c("srhealth_memento" = "scale")) %>%
+  left_join(eqmemory_eqp_3cat$concordance %>% as_tibble() %>% 
               dplyr::rename("srmemory_eqt_3cat" = "yx"),
             by = c("srmemory_memento" = "scale")) %>%
-  dplyr::mutate(across(contains("eqt"), round, .names = "{.col}_cleaned"))
+  left_join(eqmemory_eqp_5cat$concordance %>% as_tibble() %>% 
+              dplyr::rename("srmemory_eqt_5cat" = "yx"),
+            by = c("srmemory_memento" = "scale")) %>%
+  dplyr::mutate(across(contains("eqt"),
+                       round, .names = "{.col}_cleaned"))
 
-# Kappa
-# The first response may not cover the full range of responses
-# Health
-health_table_3cat <- with(pred_mat,
-                          table(srhealth_share_3cat_rev, srhealth_eqt_3cat_cleaned))
-cohen.kappa(health_table_3cat, alpha = .05) # 0.57 (0.49, 0.66)
-
+# kappa
+# The first response may not cover the full range.
 # Memory
-memory_table_3cat <- with(pred_mat,
-                          table(srmemory_share_3cat, srmemory_eqt_3cat_cleaned))
-cohen.kappa(memory_table_3cat, alpha = .05) # 0.58 (0.50, 0.67)
+memory_table_3cat <- with(pred_mat, 
+                     table(srmemory_share_3cat, srmemory_eqt_3cat_cleaned))
+cohen.kappa(memory_table_3cat, alpha = .05)
+
+# for some reason, cohen.kappa function did not work for the 5 category memory
+p_load("irr")
+memory_mat <- pred_mat %>% 
+  dplyr::select(srmemory_share_5cat, srmemory_eqt_5cat_cleaned)
+kappa2(memory_mat, "squared") 
+kappa2(memory_mat, "equal") 
+
+# Health
+health_table_3cat <- with(pred_mat, 
+                     table(srhealth_share_3cat_rev, srhealth_eqt_3cat_cleaned))
+cohen.kappa(health_table_3cat, alpha = .05)
+
+health_table_5cat <- with(pred_mat, 
+                          table(srhealth_share_5cat_rev, srhealth_eqt_5cat_cleaned))
+cohen.kappa(health_table_5cat, alpha = .05)$weighted.kappa
+cohen.kappa(health_table_5cat, alpha = .05)$confid["weighted kappa", "lower"]
+cohen.kappa(health_table_5cat, alpha = .05)$confid["weighted kappa", "upper"]
+
+health_mat <- pred_mat %>% 
+  dplyr::select(srhealth_share_5cat_rev, srhealth_eqt_5cat_cleaned)
+kappa2(health_mat, "squared") 
+kappa2(health_mat, "equal") 
 
 #---- OLD ----
 # #---- **kappa stratify by age, sex and question order(final model) ----
@@ -630,6 +656,7 @@ cohen.kappa(memory_table_3cat, alpha = .05) # 0.58 (0.50, 0.67)
 # 
 # table(a_cat)
 # #---- Equipercentile attempt ----
+# All data (irregardless of question order)
 # p_load("equate")
 # 
 # bordeaux_cleaned %<>%
@@ -658,5 +685,3 @@ cohen.kappa(memory_table_3cat, alpha = .05) # 0.58 (0.50, 0.67)
 # eqmemory_eqp <- equate(memento_srmemory_freq, share_srmemory_freq, type = "equipercentile")
 # 
 # plot(eqmemory_linear, eqmemory_eqp, eqmemory_mean, xlab = "srmemory")
-
-

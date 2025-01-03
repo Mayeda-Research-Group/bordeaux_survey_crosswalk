@@ -344,6 +344,7 @@ writexl::write_xlsx(kappa_tableS3,
                                       "tableS3_kappa_dropout_bordeaux.xlsx"))
 
 #---- Figure 1. Dist ----
+load(here::here("data", "analysis_data", "Calishare", "bordeaux_cleaned.RData"))
 # Box plot 3 categories
 bordeaux_formodel %>%
   dplyr::select(srhealth_memento, srmemory_memento,
@@ -367,8 +368,8 @@ bordeaux_formodel %>%
   theme_bw() +
   labs(x = "Likert scale", y = "Continuous")
 
-# ggsave(here::here("output", "bordeaux_crosswalk", "fig1_joint_dist_box_bordeaux_3cat.png"),
-#        dpi = 300, width = 9, height = 7, units = "in")
+ggsave(here::here("output", "bordeaux_crosswalk", "fig1_joint_dist_box_bordeaux_3cat.jpg"),
+       dpi = 300, width = 9, height = 7, units = "in")
 
 #---- Fig S1. residual plot for final models ----
 load(here::here("data", "model_results", "crosswalk", 

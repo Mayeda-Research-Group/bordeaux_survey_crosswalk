@@ -8,34 +8,25 @@ if(!require("pacman")){
   install.packages("pacman")
 }
 p_load("tidyverse", "magrittr", "plyr", "dplyr", "nnet", "MASS", 
-       "car", "splines", "psych", "rms")
-
-#---- function ----
-source(here::here("code", "functions.R"))
+       "car", "splines", "psych")
 
 #---- Load the data ----
 load(here::here("data", "analysis_data", "Calishare", "bordeaux_cleaned.RData"))
 
 #---- Preparing for Crosswalk ----
 bordeaux_formodel <- bordeaux_cleaned %>%
-  dplyr::mutate(across(c("srmemory_share", "srhealth_share"), 
-                       ~ as.factor(case_when(. %in% c(1, 2) ~ 1,
-                                             . == 3 ~ 2,
-                                             . %in% c(4, 5) ~ 3))),
-                age_group = as.factor(age_group)) %>%
-  dplyr::rename(srmemory_share_3cat = srmemory_share,
-                srhealth_share_3cat = srhealth_share) %>%
-  cbind(., bordeaux_cleaned %>% dplyr::select(srmemory_share, srhealth_share))
-
-bordeaux_formodel %<>% mutate(srmemory_share_5cat = as.factor(srmemory_share),
-                              srhealth_share_5cat = as.factor(srhealth_share))
+  dplyr::mutate(age_group = as.factor(age_group),
+                srmemory_share_5cat = as.factor(srmemory_share),
+                srhealth_share_5cat = as.factor(srhealth_share),
+                srmemory_share_3cat = as.factor(srmemory_share_3cat),
+                srhealth_share_3cat = as.factor(srhealth_share_3cat))
 
 # Sanity check
 bordeaux_formodel %>%
   dplyr::select(contains(c("srmemory_share", "srhealth_share"))) %>%
   map_dfr(class) %>% t()
-# 
-# save(bordeaux_cleaned, bordeaux_formodel, 
+
+# save(bordeaux_cleaned, bordeaux_formodel,
 #      file = here::here("data", "analysis_data", "Calishare", "bordeaux_cleaned.RData"))
 
 #---- Models ----
@@ -107,7 +98,42 @@ models_func <- function(m){
 crosswalk_models_memory <- models_func("memory")
 crosswalk_models_health <- models_func("health")
 
-#---- **predicted values ----
+##---- Fit stats ----
+# Test proportional assumptions
+# Memory
+poTest(crosswalk_models_memory$ordinal_memory)
+# Odds are not proportioanl. Stay with multinomial
+poTest(crosswalk_models_memory$int_ordinal_memory)
+# Odds are not proportioanl. Stay with multinomial
+poTest(crosswalk_models_memory$ordinal_memory_agesex)
+# Odds are not proportioanl. Stay with multinomial
+poTest(crosswalk_models_memory$ordinal_memory_agesexint)
+# Odds are not proportioanl. Stay with multinomial
+poTest(crosswalk_models_memory$int_ordinal_memory_agesexint)
+# Odds are not proportioanl. Stay with multinomial
+
+# poTest(crosswalk_models_memory$ordinal_memory_splines_3knots)
+# poTest(crosswalk_models_memory$int_ordinal_memory_splines_3knots)
+# poTest(crosswalk_models_memory$ordinal_memory_splines)
+# poTest(crosswalk_models_memory$ordinal_memory_splines_3knots)
+# Not converged!
+
+# Health
+poTest(crosswalk_models_health$ordinal_health)
+# H0 not rejected, ordinal?
+# poTest(crosswalk_models_health$ordinal_health_splines)
+
+
+# R^2
+# Memory
+summary(crosswalk_models_memory$linear_memory)
+summary(crosswalk_models_memory$linear_memory_splines_3knots)
+
+# Health
+summary(crosswalk_models_health$linear_health)
+summary(crosswalk_models_health$linear_health_splines_3knots)
+
+##---- predicted values ----
 # Predicted categorical memory reports
 pred_mat <- bordeaux_formodel %>% 
   dplyr::select(srmemory_memento, srhealth_memento)
@@ -144,11 +170,11 @@ for (v in variables){
   tryCatch({if (str_detect(v, "memory")){
     temp_table <- table(bordeaux_formodel$srmemory_share_3cat,
                         # temp_table <- table(bordeaux_formodel$srmemory_share_5cat,
-                        pred_mat[, v], useNA = "ifany")
+                        pred_mat %>% pull(v), useNA = "ifany")
   } else if (str_detect(v, "health")){
     temp_table <- table(bordeaux_formodel$srhealth_share_3cat,
                         # temp_table <- table(bordeaux_formodel$srhealth_share_5cat,
-                        pred_mat[, v], useNA = "ifany")
+                        pred_mat %>% pull(v), useNA = "ifany")
   }
     wtd_kappa <- cohen.kappa(temp_table, alpha = .05)
     kappa_tbl[1, paste0(v, "_kappa_pe")] <- wtd_kappa$weighted.kappa
@@ -167,8 +193,8 @@ kappa_tbl %>% dplyr::select(contains("health")) %>% t()
 kappa_tbl %>% dplyr::select(ends_with("_pe") & contains("health")) %>% t() %>%
   as.data.frame() %>% mutate(model = rownames(.)) %>% arrange(V1)
 
-# save(kappa_tbl, file = here::here("data", "analysis_data", "Calishare",
-#                                   "wtd_kappa_04232024.RData"))
+save(kappa_tbl, file = here::here("data", "analysis_data", "Calishare",
+                                  "wtd_kappa_04232024.RData"))
 
 #---- Final model ----
 # Memory: multinomial with splines, interaction term with order, age, sex
@@ -186,9 +212,9 @@ model_final_health <-
   nnet::multinom(srhealth_share_3cat ~ ns(srhealth_memento, 
                                           knots = knots_health, 
                                           Boundary.knots = boundary_health)*female + 
-                          ns(srhealth_memento, knots = knots_health, 
-                             Boundary.knots = boundary_health)*age_group,
-                        data = bordeaux_formodel)
+                   ns(srhealth_memento, knots = knots_health, 
+                      Boundary.knots = boundary_health)*age_group,
+                 data = bordeaux_formodel)
 summary(model_final_health)
 # The coefficient are the same with the function results
 
@@ -198,7 +224,8 @@ crosswalk_model <- list(
     crosswalk_models_memory$int_multi_memory_splines_3knots_agesexint,
   "multi_health_splines_3knots_agesexint" = 
     model_final_health)
-save(crosswalk_model, file = here::here("data", "model_results", "crosswalk",
+save(crosswalk_model, boundary_health, knots_health, 
+     file = here::here("data", "model_results", "crosswalk",
                                         "crosswalk_model_300_04232024.RData"))
 
 #---- **linear weighted kappa ----
@@ -215,7 +242,7 @@ health_mat <- pred_mat %>% cbind(bordeaux_formodel) %>%
 kappa2(health_mat, "squared")
 kappa2(health_mat, "equal")
 
-#---- Equiprecentile: First response ----
+#---- Equiprecentile: First response from participants ----
 p_load("equate")
 # health: 1-excellent, 5-poor;0 (worst)-10(best), need to be reversed
 # memory lower number: better, higher number worse
@@ -290,7 +317,7 @@ pred_mat <- bordeaux_formodel %>%
 # The first response may not cover the full range.
 # Memory
 memory_table_3cat <- with(pred_mat, 
-                     table(srmemory_share_3cat, srmemory_eqt_3cat_cleaned))
+                          table(srmemory_share_3cat, srmemory_eqt_3cat_cleaned))
 cohen.kappa(memory_table_3cat, alpha = .05)
 
 # for some reason, cohen.kappa function did not work for the 5 category memory
@@ -302,7 +329,7 @@ kappa2(memory_mat, "equal")
 
 # Health
 health_table_3cat <- with(pred_mat, 
-                     table(srhealth_share_3cat_rev, srhealth_eqt_3cat_cleaned))
+                          table(srhealth_share_3cat_rev, srhealth_eqt_3cat_cleaned))
 cohen.kappa(health_table_3cat, alpha = .05)
 
 health_table_5cat <- with(pred_mat, 
@@ -315,6 +342,33 @@ health_mat <- pred_mat %>%
   dplyr::select(srhealth_share_5cat_rev, srhealth_eqt_5cat_cleaned)
 kappa2(health_mat, "squared") 
 kappa2(health_mat, "equal") 
+
+#---- R1: attempt for kmeans cluster to see the outliers confused by the reverse coding ----
+# did not use it in the end as kmeans is not showing things better than the 1.5Q rule
+kmeans_res <- bordeaux_formodel %>%
+  mutate(rank = case_when(rank == "memento_share" ~ 1,
+                          rank == "share_memento" ~ 2) %>% as.factor()) %>%
+  dplyr::select(
+    # female,age_group，rank, 
+    srmemory_memento, srmemory_share_3cat,
+    srhealth_memento, srhealth_share_3cat) %>%
+  kmeans(., centers = 2)
+table(kmeans_res$cluster)
+bordeaux_formodel$kmeans_cl <- kmeans_res$cluster
+
+p_load("psych")
+bordeaux_formodel %>%
+  mutate(srmemory_share_3cat = as.numeric(srmemory_share_3cat),
+         srmemory_share_5cat = as.numeric(srmemory_share_5cat)) %>%
+  dplyr::select(srmemory_share_5cat,srmemory_share_3cat) %>% 
+  psych::alpha(.)
+bordeaux_foralpha <- bordeaux_formodel %>%
+  mutate_at(vars(ends_with(c("3cat", "5cat"))), as.numeric)
+class(bordeaux_foralpha$srhealth_share_3cat)
+
+psych::alpha(bordeaux_foralpha[, c("srmemory_memento", "srmemory_share_5cat")])
+psych::alpha(bordeaux_foralpha[, c("srhealth_memento", "srhealth_share_5cat")])
+
 
 #---- OLD ----
 # #---- **kappa stratify by age, sex and question order(final model) ----

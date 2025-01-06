@@ -2,7 +2,7 @@
 This repo contains all the code necessary to replicate data construction and analyses in the paper: 
 
 
-*Wu Y, Hayes-Larson E, Zhou Y, Bouteloup V, Zimmerman SC, Pederson AM, Planche V, Seamans MJ, Westreich D, Glymour MM, Gibbons LE, Dufouil C, Mayeda ER. Statistical harmonization of measures across studies using external data: self-rated health and self-rated memory*
+Wu Y, Hayes-Larson E, Zhou Y, Bouteloup V, Zimmerman SC, Pederson AM, Planche V, Seamans MJ, Westreich D, Glymour MM, Gibbons LE, Dufouil C, Mayeda ER. Statistical harmonization of measures across studies using external data: self-rated health and self-rated memory. *Annals of Epidemiology (In Press)*
 
 ## Project Descriptions
 We present one approach using external data to harmonize measures for two constructs: self-rated health and self-rated memory, measured differently in a memory clinic-based study (using a Likert scale) and a nationally representative study (using a continuous scale).

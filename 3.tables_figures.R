@@ -368,7 +368,7 @@ bordeaux_formodel %>%
   theme_bw() +
   labs(x = "Likert scale", y = "Continuous")
 
-ggsave(here::here("output", "bordeaux_crosswalk", "fig1_joint_dist_box_bordeaux_3cat.jpg"),
+ggsave(here::here("output", "bordeaux_crosswalk", "fig1_joint_dist_box_bordeaux_3cat.eps"),
        dpi = 300, width = 9, height = 7, units = "in")
 
 #---- Fig S1. residual plot for final models ----
